@@ -14,11 +14,19 @@ function loadBrowserBundle(source) {
   const sandbox = {
     module: { exports: {} }, console,
     setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask,
-    AbortController,
+    // Use exactly the controller installed by React Native, not Node's newer API.
+    AbortController: require('abort-controller').AbortController,
     WebAssembly: undefined, TextEncoder: undefined, TextDecoder: undefined,
     CompressionStream: undefined, DecompressionStream: undefined,
   };
   vm.createContext(sandbox);
+  // Match Hermes' missing TypedArray @@species behavior. V8 otherwise hides
+  // the Buffer.subarray -> Uint8Array regression that broke the real APK.
+  vm.runInContext(`(() => { const nativeSubarray = Uint8Array.prototype.subarray;
+    Uint8Array.prototype.subarray = function(start, end) {
+      const view = nativeSubarray.call(this, start, end);
+      return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+    }; })();`, sandbox);
   vm.runInContext(source, sandbox, { timeout: 10000 });
   return { sandbox, exports: sandbox.module.exports };
 }
@@ -64,10 +72,30 @@ test('portable crypto and the single RSA trust key work without Node, WebAssembl
   const aes = crypto.aesIge(actual.Buffer.alloc(32, 3)), iv = actual.Buffer.alloc(32, 4), clear = actual.Buffer.alloc(32, 9);
   assert.equal(aes.decrypt(aes.encrypt(clear, iv), iv).toString('hex'), clear.toString('hex'));
   aes.dispose();
+  // NIST SP 800-38A AES-256-CTR first block, also used by transport obfuscation.
+  const ctr = crypto.aesCtr(actual.Buffer.from('603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4', 'hex'),
+    actual.Buffer.from('f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff', 'hex'));
+  assert.equal(ctr.update(actual.Buffer.from('6bc1bee22e409f96e93d7e117393172a', 'hex')).toString('hex'), '601ec313775789a5b7a7f504bbf3d228');
+  ctr.dispose();
   assert.equal(compression.gunzip(compression.gzip(bytes)).toString(), 'abc');
   assert.equal(crypto.randomBytes(32).length, 32);
   assert.equal(instrumented.sandbox.crypto.subtle, undefined);
   assert.equal(instrumented.sandbox.WebAssembly, undefined);
+});
+
+test('Buffer subarrays retain protocol methods and share bytes on Hermes', () => {
+  const buffer = Buffer.from([1, 2, 3, 4, 5]);
+  const view = buffer.subarray(1, -1);
+  assert.equal(Buffer.isBuffer(view), true);
+  assert.equal(view.toString('hex'), '020304');
+  assert.equal(view.buffer, buffer.buffer);
+  assert.equal(view.byteOffset, buffer.byteOffset + 1);
+  view[0] = 9;
+  assert.equal(buffer[1], 9);
+  assert.equal(view.readUInt16LE(0), 777);
+  const target = Buffer.alloc(2);
+  view.subarray(-2).copy(target);
+  assert.equal(target.toString('hex'), '0304');
 });
 
 function photoMessage() {
@@ -155,6 +183,24 @@ test('the native WebSocket is binary and only opens the pinned OwpenGram URL', a
   await socket.close();
 });
 
+test('the actual obfuscated connection sends its header and packet with Hermes Buffer semantics', async () => {
+  const sent = [];
+  sandbox.WebSocket = class {
+    constructor() { queueMicrotask(() => this.onopen()); }
+    send(bytes) { sent.push(bytes); }
+    close() { this.onclose?.(); }
+  };
+  const client = await buildPinnedClient({ config });
+  const connection = client._createConnection({ id: 1, ipAddress: OWPENGRAM_SERVER.host, port: OWPENGRAM_SERVER.port });
+  try {
+    await connection.connect();
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].byteLength, 64);
+    await connection.send(Buffer.alloc(20));
+    assert.equal(sent[1].byteLength, 24);
+  } finally { await connection.disconnect(); await client.destroy(); }
+});
+
 test('StringSession import rejects an official-server session before client construction', async () => {
   const session = new StringSession('');
   session.setDC(2, '149.154.167.51', 443);
@@ -176,6 +222,34 @@ test('configuration and errors do not expose API hash, session or upstream reque
   assert.equal(safeOwpenError(new Error('request api_hash=secret')).message, 'OWPENGRAM_REQUEST_FAILED');
   assert.equal(safeOwpenError({ errorMessage: 'PHONE_CODE_INVALID' }).status, 400);
   assert.equal(safeOwpenError({ errorMessage: 'FLOOD_WAIT_12', seconds: 12 }).seconds, 12);
+});
+
+test('connection failures retain actionable categories without copying native or cryptographic data', () => {
+  const cases = [
+    [{ message: 'CLEARTEXT communication not permitted api_hash=private' }, 'OWPENGRAM_ANDROID_NETWORK_POLICY'],
+    [{ message: 'Expected HTTP 101 response but was 403' }, 'OWPENGRAM_WEBSOCKET_UPGRADE_FAILED'],
+    [{ name: 'SecurityError', message: 'Could not find a valid key for fingerprints private' }, 'OWPENGRAM_RSA_FINGERPRINT_REJECTED'],
+    [{ name: 'SecurityError', message: 'invalid nonce private' }, 'OWPENGRAM_MTPROTO_SECURITY_REJECTED'],
+    [{ name: 'TypeError', message: 'private is not a function' }, 'OWPENGRAM_RUNTIME_INCOMPATIBLE'],
+    [{ name: 'TimeoutError', message: 'private' }, 'OWPENGRAM_REQUEST_TIMEOUT'],
+    [{ name: 'SocketClosedError', message: 'private' }, 'OWPENGRAM_TRANSPORT_CLOSED'],
+  ];
+  for (const [error, code] of cases) {
+    const safe = safeOwpenError(error, 'OWPENGRAM_CONNECTION_FAILED');
+    assert.equal(safe.code, code);
+    assert.equal(safe.message.includes('private'), false);
+    assert.equal(JSON.stringify(safe).includes('private'), false);
+  }
+});
+
+test('a stalled MTProto handshake is closed at the deadline and a new attempt can succeed', async () => {
+  let disconnected = 0;
+  const client = { connect: () => new Promise(() => {}), disconnect: async () => { disconnected++; } };
+  await assert.rejects(sdk.connectOwpenTransport(client, 10), { code: 'OWPENGRAM_CONNECTION_TIMEOUT' });
+  assert.equal(disconnected, 1);
+  client.connect = async () => true;
+  await sdk.connectOwpenTransport(client, 10);
+  assert.equal(disconnected, 1);
 });
 
 test('email encoding follows Loligram and sign-in uses emailVerification for email delivery', async () => {
@@ -205,6 +279,46 @@ test('server-required SRP is returned as a password step without auto-signup', a
   assert.deepEqual(plain(await client.authCode({ phoneNumber: '+33123456789', phoneCodeHash: 'hash', code: '12345' })), { state: 'password' });
   assert.equal(requests[0].phoneCode, '12345');
   assert.equal(requests[0].emailVerification, undefined);
+});
+
+test('real teleproto auth RPC works with the React Native AbortController', async () => {
+  const originalPrototype = sandbox.AbortController.prototype;
+  assert.equal(typeof new sandbox.AbortController().signal.throwIfAborted, 'undefined');
+  const raw = await buildPinnedClient({ config });
+  const requests = [];
+  raw._connectedDeferred.resolve();
+  raw._sender = {
+    userDisconnected: false, isConnected: () => true, disconnect: async () => {},
+    addStateToQueue(state) {
+      state.request.getBytes();
+      requests.push(state.request);
+      state.resolve(new Api.auth.SentCode({ phoneCodeHash: 'fixture-hash',
+        type: new Api.auth.SentCodeTypeEmailCode({ emailPattern: 'a***@example.org', length: 6 }) }));
+    },
+  };
+  try {
+    const challenge = await new OwpenClient(raw, config).authStart('a@example.org');
+    assert.equal(challenge.state, 'code');
+    assert.equal(requests[0].className, 'auth.SendCode');
+    assert.equal(requests[0].phoneNumber, '888aq0exampleq1org');
+    assert.equal(sandbox.AbortController.prototype, originalPrototype);
+    assert.equal(typeof new sandbox.AbortController().signal.throwIfAborted, 'undefined');
+  } finally { await raw.destroy(); }
+});
+
+test('real teleproto timeout cancels the pending RPC and preserves its reason on React Native', async () => {
+  const raw = await buildPinnedClient({ config });
+  raw._connectedDeferred.resolve();
+  let cancellation;
+  raw._sender = {
+    userDisconnected: false, isConnected: () => true, disconnect: async () => {},
+    addStateToQueue() {},
+    cancelRequest(state, reason) { cancellation = reason; state.reject(reason); },
+  };
+  try {
+    await assert.rejects(raw.invoke(new Api.help.GetConfig(), undefined, { timeout: 10 }), { name: 'TimeoutError' });
+    assert.equal(cancellation.name, 'TimeoutError');
+  } finally { await raw.destroy(); }
 });
 
 test('text, photo, video and AAC voice uploads preserve bytes and use standard MTProto media', async () => {

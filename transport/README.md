@@ -15,13 +15,17 @@ configureNativeRandom(ExpoCrypto.getRandomValues);
 
 const client = await createOwpenClient({
   session: serializedSession || '',
-  config: { apiId: configuredApiId, apiHash: configuredApiHash, dcId: 2 },
+  config: { apiId: configuredApiId, apiHash: configuredApiHash, dcId: 1 },
 });
 ```
 
 L’appel crée et connecte le client MTProto. Une chaîne de session vide crée uniquement une session de transport ; l’envoi d’un code de connexion exige un appel explicite à `authStart`. Le module ne lit aucune variable d’environnement et ne contient aucun identifiant d’application réel.
 
 La façade mobile doit importer le **bundle**, pas le point d’entrée source ni `teleproto` directement. Le bundle inclut les variantes `browser` des dépendances, afin que Metro ne sélectionne pas les modules Node. Il exporte son propre `Buffer` : utiliser `Buffer.from(bytes)` ou `Buffer.from(base64, 'base64')` avant l’envoi d’un fichier.
+
+Deux adaptations sont indispensables sur Expo SDK 55 / React Native 0.83 / Hermes : `buffer.js` conserve les méthodes Buffer sur les vues `subarray`, et `abort-controller.js` fournit `signal.reason` et `signal.throwIfAborted` aux contrôleurs internes de teleproto. Ces adaptations restent dans le bundle ; elles ne modifient pas les prototypes globaux de React Native. Les supprimer réintroduit des erreurs que le moteur V8 de Node ne reproduit pas spontanément.
+
+L’ouverture complète (WebSocket, clé MTProto et configuration initiale) est bornée à 45 secondes ; les RPC de la façade sont bornés à 30 secondes. Un dépassement ferme la tentative, conserve la session existante et laisse l’utilisateur réessayer. Les erreurs distinguent blocage Android, échec d’upgrade WebSocket, interruption, délai, incompatibilité du moteur et rejet cryptographique, sans publier les exceptions brutes.
 
 `configureNativeRandom` doit recevoir `ExpoCrypto.getRandomValues`, avant la construction d’un client. Les fonctions de hachage, AES et compression restent synchrones dans la bibliothèque portable. Elles n’exigent ni `SubtleCrypto`, ni WebAssembly, ni un polyfill Node. Aucun repli vers `Math.random` n’est ajouté.
 
@@ -115,3 +119,5 @@ node --test tests/owpengram-transport.test.cjs
 Le script exige `teleproto@1.232.1` et esbuild, compile les variantes navigateur et refuse tout import runtime externe ou branche Node détectée. Il faut régénérer le bundle après modification des sources.
 
 Les tests exécutent le bundle dans une VM dépourvue de Node, WebAssembly, SubtleCrypto, encodeurs DOM et compression navigateur. Ils vérifient les primitives portables, le verrouillage RSA/DC/URL, les sessions, les transitions d’authentification, la sérialisation des RPC, les attributs audio/vidéo et les plafonds de téléchargement. Les sockets sont simulés : aucun compte, code de connexion, publication ou message réel n’est utilisé. La réception en conditions réelles sur un appareil et le serveur reste une validation distincte.
+
+Le workflow `owpengram-android.yml` ajoute un émulateur Android 35 avec Hermes : une entrée de test isolée établit réellement MTProto, teste SecureStore et appelle `auth.sendCode` avec un identifiant vide (réponse de rejet attendue, aucun destinataire). Il restaure ensuite l’entrée de l’application, compile l’APK complet et teste son écran de connexion avec le bouton Continuer. Seul cet APK complet est publié. Ce test ne valide pas la réception d’un code réel ni une session utilisateur authentifiée.

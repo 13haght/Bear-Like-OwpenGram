@@ -3,7 +3,8 @@
  * Metro consumes it; never import teleproto's Node entry from the mobile app.
  * Only the transport uses MTProto encryption. Media bytes have no extra AES layer.
  */
-import { Buffer } from 'buffer';
+// Must initialize before teleproto; all its Buffer imports share this instance.
+import { Buffer } from './buffer.js';
 import { TelegramClient, Api } from 'teleproto';
 import { StringSession } from 'teleproto/sessions';
 import { CustomFile } from 'teleproto/client/uploads';
@@ -112,13 +113,19 @@ export class PinnedOwpenSocket extends WebSocketSocket {
       throw new OwpenError('OWPENGRAM_ENDPOINT_PIN_MISMATCH', 503);
     }
     assertOwpenRsaKey();
-    return super.create(url, protocols);
+    const socket = super.create(url, protocols);
+    socket.addEventListener?.('error', event => {
+      this.nativeFailure = safeOwpenError(event, 'OWPENGRAM_WEBSOCKET_FAILED');
+    });
+    return socket;
   }
   async connect(port, ip, testServers = false) {
     assertEndpoint(ip, port);
     if (testServers) throw new OwpenError('OWPENGRAM_TEST_SERVER_DISABLED', 503);
     assertOwpenRsaKey();
-    return super.connect(port, ip, false);
+    this.nativeFailure = undefined;
+    try { return await super.connect(port, ip, false); }
+    catch (error) { throw this.nativeFailure || safeOwpenError(error, 'OWPENGRAM_WEBSOCKET_FAILED'); }
   }
 }
 
@@ -176,11 +183,27 @@ export async function createOwpenClient(options = {}) {
   const config = readOwpenConfig(options.config);
   const client = await buildPinnedClient({ ...options, config });
   try {
-    await client.connect();
+    await connectOwpenTransport(client);
     return new OwpenClient(client, config);
   } catch (error) {
     await client.destroy().catch(() => {});
     throw safeOwpenError(error, 'OWPENGRAM_CONNECTION_FAILED');
+  }
+}
+
+/** Bound the whole handshake + initial RPC, not just the WebSocket opening. */
+export async function connectOwpenTransport(client, timeoutMs = 45000) {
+  let timer, timedOut = false;
+  try {
+    await Promise.race([
+      client.connect(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => { timedOut = true; reject(new OwpenError('OWPENGRAM_CONNECTION_TIMEOUT')); }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    if (timedOut) await client.disconnect().catch(() => {});
   }
 }
 
@@ -240,7 +263,7 @@ export class OwpenClient {
     this.config = readOwpenConfig(config);
   }
 
-  invoke(request) { return safeCall(() => this.client.invoke(request)); }
+  invoke(request) { return safeCall(() => this.client.invoke(request, undefined, { timeout: 30000 })); }
   serializeSession() { return this.client.session.save(); }
   isConnected() { return !this.closed && Boolean(this.client.connected); }
   reconnect() {
@@ -250,7 +273,7 @@ export class OwpenClient {
       const task = safeCall(async () => {
         // Reuse this client and its authorization key, including before an OTP
         // challenge is complete. No new sendCode or account action occurs here.
-        await this.client.connect();
+        await connectOwpenTransport(this.client);
         if (this.closed) throw new OwpenError('OWPENGRAM_CLIENT_CLOSED', 409);
         return this;
       });

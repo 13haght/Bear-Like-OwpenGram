@@ -1,8 +1,20 @@
-name: Tester OwpenGram sur Android Hermes
+name: Valider Android Hermes et compiler BearLike
 on:
   workflow_dispatch:
   push:
-    branches: ['fix/android-owpengram-connection']
+    branches: [main, 'fix/android-owpengram-connection']
+    paths:
+      - 'transport/**'
+      - 'lib/**'
+      - 'components/**'
+      - 'App.js'
+      - 'index.js'
+      - 'package*.json'
+      - 'app.config.js'
+      - 'plugins/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/owpengram-android.yml'
 permissions:
   contents: read
 concurrency:
@@ -11,7 +23,7 @@ concurrency:
 jobs:
   android-connection:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       CI: '1'
       EXPO_NO_TELEMETRY: '1'
@@ -61,3 +73,34 @@ jobs:
           target: default
           disable-animations: true
           script: node scripts/ci-run-android-probe.cjs
+      - name: Restore the real app and build the distributable APK
+        env:
+          NODE_ENV: production
+          EXPO_PUBLIC_OWPENGRAM_API_ID: ${{ secrets.EXPO_PUBLIC_OWPENGRAM_API_ID }}
+          EXPO_PUBLIC_OWPENGRAM_API_HASH: ${{ secrets.EXPO_PUBLIC_OWPENGRAM_API_HASH }}
+        run: |
+          git show HEAD:index.js > index.js
+          cd android
+          ./gradlew :app:assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64
+      - name: Start the actual BearLike APK and exercise Continue
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          script: node scripts/ci-smoke-android-app.cjs
+      - name: Verify and prepare the APK
+        run: |
+          node scripts/ci-verify-apk.cjs android/app/build/outputs/apk/release/app-release.apk android/app/debug.keystore
+          mkdir -p artifacts
+          cp android/app/build/outputs/apk/release/app-release.apk artifacts/BearLike-OwpenGram-Android-fix.apk
+          sha256sum artifacts/BearLike-OwpenGram-Android-fix.apk
+      - name: Publish the verified test APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: BearLike-OwpenGram-Android-fix.apk
+          path: artifacts/BearLike-OwpenGram-Android-fix.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 14

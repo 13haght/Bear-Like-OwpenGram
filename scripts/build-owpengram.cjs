@@ -17,6 +17,7 @@ async function build() {
     platform: 'browser',
     format: 'cjs',
     target: 'es2020',
+    inject: ['transport/abort-controller.js'],
     minify: true,
     legalComments: 'eof',
     metafile: true,
@@ -29,8 +30,15 @@ async function build() {
       throw new Error('Unexpected Node implementation in mobile bundle: ' + file);
     }
     for (const dependency of details.imports) {
-      if (dependency.external) throw new Error('Unbundled runtime import: ' + dependency.path);
+      // esbuild labels injected bindings external in input metadata even though
+      // their implementation is in the output. Check output imports as well.
+      if (dependency.external && dependency.path !== path.join(root, 'transport/abort-controller.js')) {
+        throw new Error('Unbundled runtime import: ' + dependency.path);
+      }
     }
+  }
+  for (const output of Object.values(result.metafile.outputs)) {
+    if (output.imports.length) throw new Error('Protocol bundle contains a runtime import');
   }
   for (const file of result.outputFiles) fs.writeFileSync(file.path, file.contents);
   console.log('Built transport/owpengram.bundle.cjs with browser platform adapters, no external runtime imports.');

@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { registerRootComponent } from 'expo';
 import * as ExpoCrypto from 'expo-crypto';
+import * as SecureStore from 'expo-secure-store';
 const sdk = require('../transport/owpengram.bundle.cjs');
 
 function category(error) {
@@ -41,6 +42,10 @@ function Probe() {
         apiHash: process.env.EXPO_PUBLIC_OWPENGRAM_API_HASH,
       });
       report('API_CONFIG_VALID');
+      await SecureStore.setItemAsync('bearlike_ci_probe', 'non-secret-storage-fixture');
+      if (await SecureStore.getItemAsync('bearlike_ci_probe') !== 'non-secret-storage-fixture') throw new Error('Secure storage unavailable');
+      await SecureStore.deleteItemAsync('bearlike_ci_probe');
+      report('SECURE_STORE_READY');
       const originalCreate = sdk.PinnedOwpenSocket.prototype.create;
       sdk.PinnedOwpenSocket.prototype.create = function (...args) {
         report('WEBSOCKET_CREATING');
@@ -60,16 +65,16 @@ function Probe() {
         connection.handshake = async () => { report('OBFUSCATION_START'); await handshake(); report('OBFUSCATION_READY'); };
         return connection;
       };
-      await client.connect();
+      await sdk.connectOwpenTransport(client);
       report('MTPROTO_CONNECTED');
       try {
         // Exercise the real encrypted authentication RPC with an empty identifier.
         // It cannot address an account or deliver a code. No API identity is logged.
         await client.invoke(new sdk.Api.auth.SendCode({ phoneNumber: '', apiId: config.apiId,
-          apiHash: config.apiHash, settings: new sdk.Api.CodeSettings({}) }), { timeout: 20000 });
+          apiHash: config.apiHash, settings: new sdk.Api.CodeSettings({}) }), undefined, { timeout: 20000 });
         report('FAIL_UNEXPECTED_AUTH_RESPONSE');
       } catch (error) {
-        if (error?.errorMessage === 'PHONE_NUMBER_INVALID') report('PASS_AUTH_RPC_REJECTED_INVALID_IDENTIFIER');
+        if (['PHONE_NUMBER_INVALID', 'PHONE_NUMBER_EMPTY'].includes(error?.errorMessage)) report('PASS_AUTH_RPC_REJECTED_INVALID_IDENTIFIER');
         else report('FAIL_AUTH_' + category(error));
       }
     })().catch(error => report('FAIL_' + failure(error))).finally(async () => {

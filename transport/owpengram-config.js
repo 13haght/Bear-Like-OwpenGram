@@ -38,8 +38,20 @@ export class OwpenError extends Error {
 /** Keep upstream errors useful without copying raw requests, passwords or keys. */
 export function safeOwpenError(error, fallback = 'OWPENGRAM_REQUEST_FAILED') {
   if (error instanceof OwpenError) return error;
-  const raw = error?.errorMessage;
-  const code = typeof raw === 'string' && /^[A-Z][A-Z0-9_]{1,90}$/.test(raw) ? raw : fallback;
+  const raw = error?.errorMessage || error?.code;
+  // Match known failure categories; never propagate raw exception messages,
+  // native URLs, TL requests, code hashes, or authorization keys to logs/UI.
+  const message = String(error?.message || '');
+  const diagnostic = /CLEARTEXT|cleartext.*permitted/.test(message) ? 'OWPENGRAM_ANDROID_NETWORK_POLICY'
+    : /valid key for fingerprints/.test(message) ? 'OWPENGRAM_RSA_FINGERPRINT_REJECTED'
+      : error?.name === 'SecurityError' ? 'OWPENGRAM_MTPROTO_SECURITY_REJECTED'
+        : error?.name === 'TimeoutError' ? 'OWPENGRAM_REQUEST_TIMEOUT'
+          : /timed out|timeout/i.test(message) ? 'OWPENGRAM_CONNECTION_TIMEOUT'
+            : /Expected HTTP 101|Unexpected server response/.test(message) ? 'OWPENGRAM_WEBSOCKET_UPGRADE_FAILED'
+              : error?.name === 'SocketClosedError' ? 'OWPENGRAM_TRANSPORT_CLOSED'
+                : /WebSocket connection/.test(message) ? 'OWPENGRAM_WEBSOCKET_FAILED'
+                  : ['TypeError', 'ReferenceError'].includes(error?.name) ? 'OWPENGRAM_RUNTIME_INCOMPATIBLE' : fallback;
+  const code = typeof raw === 'string' && /^[A-Z][A-Z0-9_]{1,90}$/.test(raw) ? raw : diagnostic;
   const status = /FLOOD|SLOWMODE/.test(code) ? 429
     : /AUTH_KEY_UNREGISTERED|SESSION_REVOKED|SESSION_EXPIRED|USER_DEACTIVATED/.test(code) ? 401
       : /INVALID|EMPTY|EXPIRED|OCCUPIED|PASSWORD|SIGNUP|PHONE_CODE|EMAIL/.test(code) ? 400 : 502;
