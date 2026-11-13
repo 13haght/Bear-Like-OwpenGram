@@ -1,0 +1,62 @@
+name: Importer le projet BearLike depuis une archive ZIP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'BearLike-V55-sources-GitHub-sans-secrets.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  importer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recuperer le depot
+        uses: actions/checkout@v4
+
+      - name: Extraire les sources a la racine
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import shutil
+          import stat
+          import zipfile
+
+          archive = Path('BearLike-V55-sources-GitHub-sans-secrets.zip')
+          if not archive.is_file():
+              raise SystemExit('Archive absente. Ajoutez le ZIP au depot pour lancer cet import.')
+          with zipfile.ZipFile(archive) as z:
+              infos = [i for i in z.infolist() if not i.is_dir()]
+              if not 40 <= len(infos) <= 100:
+                  raise SystemExit(f'Nombre de fichiers inattendu: {len(infos)}')
+              if not {'package.json', 'App.js', '.github/workflows/android-apk.yml'} <= {i.filename for i in infos}:
+                  raise SystemExit('Le ZIP ne contient pas le projet BearLike attendu.')
+              for i in infos:
+                  p = PurePosixPath(i.filename)
+                  if p.is_absolute() or '..' in p.parts or '.git' in p.parts:
+                      raise SystemExit(f'Chemin dangereux: {i.filename}')
+                  if stat.S_IFMT(i.external_attr >> 16) == stat.S_IFLNK:
+                      raise SystemExit(f'Lien symbolique interdit: {i.filename}')
+                  if p.name in {'.env', '.env.local', 'credentials.json', 'PARAMETRES_PRIVES.env'}:
+                      raise SystemExit('Fichier sensible present dans le ZIP.')
+              for i in infos:
+                  dst = Path(i.filename)
+                  dst.parent.mkdir(parents=True, exist_ok=True)
+                  with z.open(i) as source, dst.open('wb') as output:
+                      shutil.copyfileobj(source, output)
+          archive.unlink()
+          print(f'Import termine : {len(infos)} fichiers extraits')
+          PY
+
+      - name: Publier les fichiers et supprimer le ZIP
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Importer les sources BearLike V55 OwpenGram"
+            git push origin HEAD:main
+          fi
