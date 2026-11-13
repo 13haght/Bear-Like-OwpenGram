@@ -9,7 +9,7 @@ export const OWPENGRAM_SERVER = Object.freeze({
   host: '152.89.254.50',
   port: 2398,
   webSocketUrl: 'ws://152.89.254.50:2398/apiws',
-  mainDcId: 2,
+  mainDcId: 1, // Aligné sur le serveur OwpenGram intégré à Loligram IV.
   dcIds: Object.freeze([1, 2, 3, 4, 5]),
   rsaFingerprintHex: '0xdff66c3cbd5ceeca',
   publicKeyPem: [
