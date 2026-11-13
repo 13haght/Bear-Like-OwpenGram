@@ -133,7 +133,8 @@ export default function OwpenGramAuth({
     } catch (failure) {
       if (attemptKey && failure.status >= 400 && failure.status < 500 && failure.status !== 429) delete attempts.current[attemptKey];
       if (failure.status === 401 || failure.code === 'AUTH_CHALLENGE_EXPIRED') resetChallenge();
-      setError(failure.message || 'La connexion à OwpenGram a échoué. Réessaie.');
+      const diagnostic = typeof failure?.code === 'string' && /^[A-Z][A-Z0-9_]{2,90}$/.test(failure.code) ? ' (' + failure.code + ')' : '';
+      setError((failure.message || 'La connexion à OwpenGram a échoué. Réessaie.') + diagnostic);
     } finally {
       clearSecrets();
       busyRef.current = false; setBusy(false);
