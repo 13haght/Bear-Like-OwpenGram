@@ -51,7 +51,8 @@ test('the workflow is manual, pinned and keeps credentials out of dependency ins
   assert.deepEqual(doc.errors, []);
   const workflow = doc.toJSON();
   assert.equal(workflow.name, 'Compiler l’APK Android');
-  assert.deepEqual(Object.keys(workflow.on), ['workflow_dispatch']);
+  assert.deepEqual(Object.keys(workflow.on), ['workflow_dispatch', 'push']);
+  assert.deepEqual(workflow.on.push, { branches: ['main'], paths: ['.github/workflows/android-apk.yml'] });
   assert.deepEqual(workflow.permissions, { contents: 'read' });
   const job = workflow.jobs.build;
   assert.equal(job['runs-on'], 'ubuntu-24.04');
