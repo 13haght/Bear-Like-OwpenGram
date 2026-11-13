@@ -1,0 +1,16 @@
+node_modules/
+.expo/
+dist*/
+android/
+ios/
+.env
+.env.*
+!.env.example
+credentials.json
+*.avant-owpengram-*
+*.keystore
+*.jks
+*.apk
+*.aab
+build-artifacts/
+artifacts/

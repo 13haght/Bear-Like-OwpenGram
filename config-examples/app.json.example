@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "Bear Like",
+    "slug": "bear-like",
+    "scheme": "bearlike",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
+    "android": {
+      "package": "com.bearlike.mobile",
+      "versionCode": 1,
+      "permissions": [
+        "RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-foreground.png",
+        "backgroundImage": "./assets/adaptive-background.png"
+      },
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Autoriser Bear Like à sélectionner des photos et vidéos.",
+          "cameraPermission": "Autoriser Bear Like à utiliser la caméra.",
+          "microphonePermission": "Autoriser Bear Like à utiliser le microphone."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Autoriser Bear Like à accéder à vos médias.",
+          "savePhotosPermission": "Autoriser Bear Like à enregistrer des médias."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Autoriser Bear Like à enregistrer des messages vocaux."
+        }
+      ],
+      "expo-document-picker",
+      "expo-secure-store",
+      "expo-video",
+      "./plugins/with-owpengram-network.cjs"
+    ],
+    "extra": {
+      "eas": {}
+    }
+  }
+}

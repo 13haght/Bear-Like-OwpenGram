@@ -1,0 +1,47 @@
+{
+  "name": "bear-like",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "doctor": "expo-doctor",
+    "build:apk": "npx eas-cli@latest build --platform android --profile preview",
+    "export:android": "expo export --platform android --output-dir dist-test",
+    "test": "node --test tests/*.test.cjs",
+    "configure:owpengram": "node scripts/configure-owpengram.cjs",
+    "build:protocol": "node scripts/build-owpengram.cjs"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~55.0.0",
+    "expo-asset": "~55.0.20",
+    "expo-audio": "~55.0.18",
+    "expo-crypto": "~55.0.19",
+    "expo-document-picker": "~55.0.17",
+    "expo-file-system": "~55.0.26",
+    "expo-font": "~55.0.8",
+    "expo-image": "~55.0.11",
+    "expo-image-manipulator": "~55.0.21",
+    "expo-image-picker": "~55.0.24",
+    "expo-media-library": "~55.0.21",
+    "expo-secure-store": "~55.0.18",
+    "expo-system-ui": "~55.0.22",
+    "expo-video": "~55.0.21",
+    "react": "19.2.0",
+    "react-native": "0.83.10",
+    "react-native-safe-area-context": "~5.6.2",
+    "teleproto": "1.232.1"
+  },
+  "devDependencies": {
+    "@babel/core": "7.29.0",
+    "@babel/plugin-transform-react-jsx": "7.28.6",
+    "react-test-renderer": "19.2.0",
+    "esbuild": "0.25.12"
+  },
+  "engines": {
+    "node": ">=22 <25"
+  }
+}
