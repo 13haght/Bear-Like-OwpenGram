@@ -41,6 +41,10 @@ jobs:
                   if p.name in {'.env', '.env.local', 'credentials.json', 'PARAMETRES_PRIVES.env'}:
                       raise SystemExit('Fichier sensible present dans le ZIP.')
               for i in infos:
+                  if i.filename == '.github/workflows/android-apk.yml':
+                      # GitHub Actions tokens cannot publish new workflow files.
+                      # This workflow is installed separately after the import.
+                      continue
                   dst = Path(i.filename)
                   dst.parent.mkdir(parents=True, exist_ok=True)
                   with z.open(i) as source, dst.open('wb') as output:
@@ -54,6 +58,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
+          echo 'Fichiers prets a publier:'
+          git diff --cached --stat
           if ! git diff --cached --quiet; then
             git commit -m "Importer les sources BearLike V55 OwpenGram"
             git push origin HEAD:main
