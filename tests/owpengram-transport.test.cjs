@@ -104,7 +104,7 @@ function mockClient(responses = []) {
 test('bootstrap, server-config, retry, migration and media DCs stay on the pinned endpoint', async () => {
   const client = await buildPinnedClient({ config });
   try {
-    assert.equal(client.session.dcId, 2);
+    assert.equal(client.session.dcId, 1);
     assert.equal(client._files.cdnEnabled, false);
     assert.equal(client._transport.webSocket, true);
     assert.equal(client._securityChecks, true);
@@ -182,21 +182,21 @@ test('email encoding follows Loligram and sign-in uses emailVerification for ema
   assert.deepEqual(plain(encodeOwpenIdentifier(' Q.a+b_c-d@EXAMPLE.org ')), { phoneNumber: '888q5q1aq4bq3cq2dq0exampleq1org', identifierKind: 'email' });
   assert.throws(() => encodeOwpenIdentifier('a!b@example.org'), { code: 'EMAIL_INVALID' });
   const { client, requests } = mockClient([
-    new Api.help.AppConfig({ hash: 1, config: new Api.JsonObject({ value: [] }) }),
     new Api.auth.SentCode({ phoneCodeHash: 'test-hash', type: new Api.auth.SentCodeTypeEmailCode({ emailPattern: 'a***@example.org', length: 6 }) }),
     new Api.auth.AuthorizationSignUpRequired({}),
     new Api.auth.Authorization({ user: self }),
   ]);
   const challenge = await client.authStart('a@example.org');
   assert.equal(challenge.codeKind, 'email');
-  assert.equal(requests[1].phoneNumber, '888aq0exampleq1org');
+  assert.equal(requests[0].phoneNumber, '888aq0exampleq1org');
+  assert.equal(requests[0].className, 'auth.SendCode');
   const verified = await client.authCode({ ...challenge, code: '123456' });
   assert.equal(verified.state, 'signup');
-  assert.equal(requests[2].emailVerification.code, '123456');
-  assert.equal(requests[2].phoneCode, undefined);
+  assert.equal(requests[1].emailVerification.code, '123456');
+  assert.equal(requests[1].phoneCode, undefined);
   const authorized = await client.authSignup({ ...challenge, firstName: 'Test' });
   assert.equal(authorized.state, 'authorized');
-  assert.equal(requests[3].phoneCodeHash, 'test-hash');
+  assert.equal(requests[2].phoneCodeHash, 'test-hash');
 });
 
 test('server-required SRP is returned as a password step without auto-signup', async () => {
