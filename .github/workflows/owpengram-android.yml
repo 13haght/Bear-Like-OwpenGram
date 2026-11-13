@@ -1,0 +1,63 @@
+name: Tester OwpenGram sur Android Hermes
+on:
+  workflow_dispatch:
+  push:
+    branches: ['fix/android-owpengram-connection']
+permissions:
+  contents: read
+concurrency:
+  group: owpen-android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android-connection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_NO_DOTENV: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Build protocol and regression tests
+        run: |
+          npm run build:protocol
+          npm test
+      - name: Prepare isolated probe entry
+        run: |
+          printf "import './tests/android-connection.entry';\n" > index.js
+          npx expo prebuild --platform android --clean --no-install --template expo-template-bare-minimum@55.0.44
+      - name: Build Android probe with the real API configuration
+        working-directory: android
+        env:
+          NODE_ENV: production
+          EXPO_PUBLIC_OWPENGRAM_API_ID: ${{ secrets.EXPO_PUBLIC_OWPENGRAM_API_ID }}
+          EXPO_PUBLIC_OWPENGRAM_API_HASH: ${{ secrets.EXPO_PUBLIC_OWPENGRAM_API_HASH }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=x86_64
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run actual Hermes and native WebSocket on Android
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          script: node scripts/ci-run-android-probe.cjs
