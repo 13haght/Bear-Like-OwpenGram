@@ -57,6 +57,14 @@ jobs:
           npm run build:protocol
           npm test
 
+      - name: Tester la liaison OwpenGram sans compte ni code
+        timeout-minutes: 1
+        continue-on-error: true
+        env:
+          EXPO_PUBLIC_OWPENGRAM_API_ID: ${{ secrets.EXPO_PUBLIC_OWPENGRAM_API_ID }}
+          EXPO_PUBLIC_OWPENGRAM_API_HASH: ${{ secrets.EXPO_PUBLIC_OWPENGRAM_API_HASH }}
+        run: node scripts/ci-probe-owpengram.cjs
+
       - name: Préparer le SDK Android
         shell: bash
         run: |
