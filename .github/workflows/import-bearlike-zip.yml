@@ -3,8 +3,6 @@ name: Importer le projet BearLike depuis une archive ZIP
 on:
   push:
     branches: [main]
-    paths:
-      - 'BearLike-V55-sources-GitHub-sans-secrets.zip'
   workflow_dispatch:
 
 permissions:
