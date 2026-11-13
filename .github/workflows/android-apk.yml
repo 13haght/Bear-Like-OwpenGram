@@ -3,6 +3,7 @@ name: Compiler l’APK Android
 on:
   workflow_dispatch:
   push:
+    # Relance volontaire uniquement lors d'une correction du workflow Android.
     branches: [main]
     paths:
       - '.github/workflows/android-apk.yml'
