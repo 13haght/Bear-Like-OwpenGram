@@ -47,4 +47,8 @@ async function main() {
   }
   throw new Error('Actual APK did not finish the connection attempt.');
 }
-main().catch(() => { console.error('ANDROID_APP_FAIL: startup or connection check failed; no raw device logs published.'); process.exitCode = 1; });
+main().catch(error => {
+  const code = /OWPENGRAM_[A-Z_]+/.exec(String(error?.message || ''))?.[0];
+  console.error('ANDROID_APP_FAIL: ' + (code || 'startup or connection check failed; no raw device logs published.'));
+  process.exitCode = 1;
+});

@@ -1,3 +1,5 @@
+import { SecurityError } from 'teleproto/errors/Common';
+
 /**
  * Public server identity copied from Loligram IV, not Telegram's public service.
  * Source: 13haght/Loligram-IV-copie @ b05b98f3d07e44a89f501c1f4b3b8c442bbafca2
@@ -44,7 +46,7 @@ export function safeOwpenError(error, fallback = 'OWPENGRAM_REQUEST_FAILED') {
   const message = String(error?.message || '');
   const diagnostic = /CLEARTEXT|cleartext.*permitted/.test(message) ? 'OWPENGRAM_ANDROID_NETWORK_POLICY'
     : /valid key for fingerprints/.test(message) ? 'OWPENGRAM_RSA_FINGERPRINT_REJECTED'
-      : error?.name === 'SecurityError' ? 'OWPENGRAM_MTPROTO_SECURITY_REJECTED'
+      : error instanceof SecurityError || error?.name === 'SecurityError' ? 'OWPENGRAM_MTPROTO_SECURITY_REJECTED'
         : error?.name === 'TimeoutError' ? 'OWPENGRAM_REQUEST_TIMEOUT'
           : /timed out|timeout/i.test(message) ? 'OWPENGRAM_CONNECTION_TIMEOUT'
             : /Expected HTTP 101|Unexpected server response/.test(message) ? 'OWPENGRAM_WEBSOCKET_UPGRADE_FAILED'

@@ -49,12 +49,17 @@ test('portable crypto and the single RSA trust key work without Node, WebAssembl
       import * as RSA from 'teleproto/crypto/RSA';
       import * as crypto from 'teleproto/platform/crypto/index';
       import * as compression from 'teleproto/platform/compression/index';
+      import { SecurityError } from 'teleproto/errors/Common';
       import { LAYER } from 'teleproto/tl/runtime/registry';
-      export { sdk, RSA, crypto, compression, LAYER };`, resolveDir: root },
+      export { sdk, RSA, crypto, compression, LAYER, SecurityError };`, resolveDir: root },
     bundle: true, platform: 'browser', format: 'cjs', target: 'es2020', write: false,
   });
   const instrumented = loadBrowserBundle(built.outputFiles[0].text);
   const { sdk: actual, RSA, crypto, compression, LAYER } = instrumented.exports;
+  // Upstream leaves Error.name as "Error"; class identity survives minification.
+  const securityError = new instrumented.exports.SecurityError('Invalid nonce containing private material');
+  assert.equal(securityError.name, 'Error');
+  assert.equal(actual.safeOwpenError(securityError).code, 'OWPENGRAM_MTPROTO_SECURITY_REJECTED');
   await assert.rejects(actual.buildPinnedClient({ config }), { code: 'OWPENGRAM_NATIVE_RANDOM_REQUIRED' });
   actual.configureNativeRandom((bytes) => webcrypto.getRandomValues(bytes));
   await Promise.all([actual.installOwpenRsaKey(), actual.installOwpenRsaKey()]);
