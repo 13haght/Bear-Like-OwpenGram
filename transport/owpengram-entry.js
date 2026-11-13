@@ -278,12 +278,10 @@ export class OwpenClient {
   }
 
   async authStart(identifier) {
-    const { phoneNumber, identifierKind } = encodeOwpenIdentifier(identifier);
-    if (identifierKind === 'email') {
-      const app = await this.invoke(new Api.help.GetAppConfig({ hash: 0 }));
-      const emailSignup = app.config?.value?.find?.((entry) => entry.key === 'email_signup_enabled');
-      if (emailSignup?.value?.value === false) throw new OwpenError('OWPENGRAM_EMAIL_SIGNUP_DISABLED', 400);
-    }
+    const { phoneNumber } = encodeOwpenIdentifier(identifier);
+    // Lors de la connexion Loligram, auth.sendCode est la première requête
+    // propre au défi. Un help.getAppConfig préalable peut échouer avant que
+    // le compte soit authentifié et n'est pas nécessaire pour envoyer un code.
     const result = await this.invoke(new Api.auth.SendCode({
       phoneNumber, apiId: this.config.apiId, apiHash: this.config.apiHash, settings: new Api.CodeSettings({}),
     }));
